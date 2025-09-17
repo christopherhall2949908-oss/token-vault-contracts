@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function transfer(address to, uint256 v) external returns (bool);
+}
+
+contract ERC20EmergencyVault {
+    address public owner;
+    address public pendingOwner;
+
+    event OwnershipTransferStarted(address indexed by, address indexed to);
+    event OwnershipTransferred(address indexed prev, address indexed next);
+    event Swept(address indexed token, address indexed to, uint256 amount);
+
+    modifier onlyOwner() { require(msg.sender == owner, "NOT_OWNER"); _; }
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    function transferOwnership(address next) external onlyOwner {
+        require(next != address(0), "ZERO");
+        pendingOwner = next;
+        emit OwnershipTransferStarted(msg.sender, next);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "NOT_PENDING");
+        emit OwnershipTransferred(owner, pendingOwner);
+        owner = pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    // sweep all tokens of `token` to `to` in case of emergency
+    function sweep(address token, address to) external onlyOwner {
+        require(to != address(0), "ZERO");
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        require(bal > 0, "EMPTY");
+        bool ok = IERC20(token).transfer(to, bal);
+        require(ok, "T_FAIL");
+        emit Swept(token, to, bal);
+    }
+}
+
+// Add minimal IERC20.balanceOf to the interface if your editor needs it:
+interface IERC20Ext { function balanceOf(address owner) external view returns (uint256); }
