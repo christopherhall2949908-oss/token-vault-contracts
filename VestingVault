@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function transfer(address to, uint256 v) external returns (bool);
+}
+
+contract ERC20VestingVault {
+    address public immutable beneficiary;
+    uint64 public immutable start;
+    uint64 public immutable duration;
+    mapping(address => uint256) public released; // token => amount released
+
+    event Released(address indexed token, uint256 amount);
+
+    constructor() {
+        beneficiary = msg.sender;
+        start = uint64(block.timestamp);
+        duration = 90 days; // fixed vesting window; change in code if needed
+    }
+
+    // anyone can fund this contract by transferring tokens directly
+    // beneficiary calls release(token) to claim vested tokens
+    function releasable(address token) public view returns (uint256) {
+        uint256 total = IERC20(token).balanceOf(address(this)) + released[token];
+        if (block.timestamp <= start) return 0;
+        uint256 elapsed = block.timestamp >= start + duration ? duration : (block.timestamp - start);
+        uint256 vested = (total * elapsed) / duration;
+        return vested - released[token];
+    }
+
+    function release(address token) external {
+        require(msg.sender == beneficiary, "NOT_BENEF");
+        uint256 amount = releasable(token);
+        require(amount > 0, "NONE");
+        released[token] += amount;
+        bool ok = IERC20(token).transfer(beneficiary, amount);
+        require(ok, "T_FAIL");
+        emit Released(token, amount);
+    }
+}
+
+// Add minimal IERC20.balanceOf to the interface
+interface IERC20Ext {
+    function balanceOf(address owner) external view returns (uint256);
+}
