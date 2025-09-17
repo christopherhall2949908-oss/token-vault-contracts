@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 v) external returns (bool);
+    function transfer(address to, uint256 v) external returns (bool);
+}
+
+contract ERC20TimelockVault {
+    struct Lock { uint128 amount; uint64 unlock; }
+    mapping(address => Lock[]) public locks; // user => locks
+    mapping(address => mapping(address => Lock[])) private _tokenLocks; // token => user => locks
+
+    event Deposited(address indexed token, address indexed user, uint256 index, uint128 amount, uint64 unlock);
+    event Withdrawn(address indexed token, address indexed user, uint256 index, uint128 amount);
+
+    // deposit tokens locked until unlockTime (user must approve)
+    function deposit(address token, uint64 unlockTime, uint128 amount) external {
+        require(amount > 0, "ZERO");
+        require(unlockTime > block.timestamp, "PAST");
+        bool ok = IERC20(token).transferFrom(msg.sender, address(this), amount);
+        require(ok, "TF_FAIL");
+        _tokenLocks[token][msg.sender].push(Lock(amount, unlockTime));
+        emit Deposited(token, msg.sender, _tokenLocks[token][msg.sender].length - 1, amount, unlockTime);
+    }
+
+    // withdraw by index after unlock
+    function withdraw(address token, uint256 idx) external {
+        Lock storage L = _tokenLocks[token][msg.sender][idx];
+        require(L.amount > 0, "NONE");
+        require(block.timestamp >= L.unlock, "LOCKED");
+        uint128 amt = L.amount;
+        L.amount = 0;
+        bool ok = IERC20(token).transfer(msg.sender, amt);
+        require(ok, "T_FAIL");
+        emit Withdrawn(token, msg.sender, idx, amt);
+    }
+
+    function locksLength(address token, address user) external view returns (uint256) {
+        return _tokenLocks[token][user].length;
+    }
+
+    function lockOf(address token, address user, uint256 i) external view returns (uint128 amount, uint64 unlock) {
+        Lock storage L = _tokenLocks[token][user][i];
+        return (L.amount, L.unlock);
+    }
+}
