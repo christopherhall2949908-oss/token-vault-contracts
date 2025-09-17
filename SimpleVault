@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 v) external returns (bool);
+    function transfer(address to, uint256 v) external returns (bool);
+}
+
+contract ERC20SimpleVault {
+    mapping(address => mapping(address => uint256)) public balanceOf; // token => user => amount
+
+    event Deposited(address indexed token, address indexed user, uint256 amount);
+    event Withdrawn(address indexed token, address indexed user, uint256 amount);
+
+    // deposit tokens into your balance (user must approve this contract first)
+    function deposit(address token, uint256 amount) external {
+        require(amount > 0, "ZERO");
+        bool ok = IERC20(token).transferFrom(msg.sender, address(this), amount);
+        require(ok, "TRANSFER_FROM_FAIL");
+        balanceOf[token][msg.sender] += amount;
+        emit Deposited(token, msg.sender, amount);
+    }
+
+    // withdraw tokens from your balance
+    function withdraw(address token, uint256 amount) external {
+        require(amount > 0, "ZERO");
+        uint256 bal = balanceOf[token][msg.sender];
+        require(bal >= amount, "INSUFFICIENT");
+        balanceOf[token][msg.sender] = bal - amount;
+        bool ok = IERC20(token).transfer(msg.sender, amount);
+        require(ok, "TRANSFER_FAIL");
+        emit Withdrawn(token, msg.sender, amount);
+    }
+
+    // helper: view user's token balance in vault
+    function vaultBalance(address token, address user) external view returns (uint256) {
+        return balanceOf[token][user];
+    }
+}
