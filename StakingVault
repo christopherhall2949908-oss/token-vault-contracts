@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 v) external returns (bool);
+    function transfer(address to, uint256 v) external returns (bool);
+}
+
+contract ERC20StakingVault {
+    uint64 public constant COOLDOWN = 1 days;
+    mapping(address => mapping(address => uint256)) public staked; // token => user => amount
+    mapping(address => mapping(address => uint64)) public lastStake; // token => user => timestamp
+
+    event Staked(address indexed token, address indexed user, uint256 amount);
+    event Unstaked(address indexed token, address indexed user, uint256 amount);
+
+    function stake(address token, uint256 amount) external {
+        require(amount > 0, "ZERO");
+        bool ok = IERC20(token).transferFrom(msg.sender, address(this), amount);
+        require(ok, "TF_FAIL");
+        staked[token][msg.sender] += amount;
+        lastStake[token][msg.sender] = uint64(block.timestamp);
+        emit Staked(token, msg.sender, amount);
+    }
+
+    function unstake(address token, uint256 amount) external {
+        uint256 bal = staked[token][msg.sender];
+        require(bal >= amount && amount > 0, "BAD");
+        require(block.timestamp >= lastStake[token][msg.sender] + COOLDOWN, "COOLDOWN");
+        staked[token][msg.sender] = bal - amount;
+        bool ok = IERC20(token).transfer(msg.sender, amount);
+        require(ok, "T_FAIL");
+        emit Unstaked(token, msg.sender, amount);
+    }
+}
